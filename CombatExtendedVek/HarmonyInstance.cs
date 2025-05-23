@@ -1,8 +1,10 @@
 ﻿using HarmonyLib;
 using System.Reflection;
+using Verse;
 
 namespace CombatExtendedVek {
-    public class HarmonyInstance {
+    [StaticConstructorOnStartup]
+    public static class HarmonyInstance {
         private static Harmony harmony = null;
 
         static internal Harmony instance {
@@ -14,7 +16,7 @@ namespace CombatExtendedVek {
             }
         }
 
-        public static void InitPatches() {
+        static HarmonyInstance() {
             instance.PatchAll(Assembly.GetExecutingAssembly());
         }
     }

@@ -16,10 +16,11 @@ using Verse.Noise;
 namespace CombatExtendedVek.Verbs {
     public class Verb_ShootCEV : Verb_ShootCE {
         public CompHyperburst? compHyperburst = null;
+        private int hyperburstStartTick = 0;
 
         public virtual CompHyperburst? CompHyperburst {
             get {
-                if (CompHyperburst == null && EquipmentSource != null) {
+                if (compHyperburst == null && EquipmentSource != null) {
                     compHyperburst = EquipmentSource.TryGetComp<CompHyperburst>();
                 }
                 return compHyperburst;
@@ -31,7 +32,7 @@ namespace CombatExtendedVek.Verbs {
                 base.ShiftTarget(report, v, calculateMechanicalOnly, isInstant);
                 return;
             }
-            if (CompFireModes == null || CompFireModes.CurrentFireMode == FireMode.SingleFire) {
+            if (CompFireModes == null || CompFireModes.CurrentFireMode == FireMode.SingleFire || (CompFireModes.CurrentFireMode == FireMode.AutoFire && !CompHyperburst.ApplyDuringAuto)) {
                 base.ShiftTarget(report, v, calculateMechanicalOnly, isInstant);
                 return;
             }
@@ -48,33 +49,45 @@ namespace CombatExtendedVek.Verbs {
                 if (report.targetPawn != null) {
                     v += report.targetPawn.Drawer.leaner.LeanOffset * 0.5f;
                 }
+                if (numShotsFired == 0) {
+                    hyperburstStartTick = Find.TickManager.TicksAbs;
+                }
+                // Do not look for target movement if mid hyperburst
+                if (numShotsFired > CompHyperburst.HyperburstShotCount || numShotsFired == 0) {
+                    newTargetLoc.Set(v.x, v.z);
 
-                newTargetLoc.Set(v.x, v.z);
+                    // ----------------------------------- STEP 1: Actual location + Shift for visibility
 
-                // ----------------------------------- STEP 1: Actual location + Shift for visibility
+                    //FIXME : GetRandCircularVec may be causing recoil to be unnoticeable - each next shot in the burst has a new random circular vector around the target.
+                    newTargetLoc += report.GetRandCircularVec();
 
-                //FIXME : GetRandCircularVec may be causing recoil to be unnoticeable - each next shot in the burst has a new random circular vector around the target.
-                newTargetLoc += report.GetRandCircularVec();
+                    // ----------------------------------- STEP 2: Estimated shot to hit location
 
-                // ----------------------------------- STEP 2: Estimated shot to hit location
+                    newTargetLoc = sourceLoc + (newTargetLoc - sourceLoc).normalized * estimatedTargDist;
 
-                newTargetLoc = sourceLoc + (newTargetLoc - sourceLoc).normalized * estimatedTargDist;
+                    // Lead a moving target
+                    if (!isInstant) {
 
-                // Lead a moving target
-                if (!isInstant) {
-
-                    newTargetLoc += report.GetRandLeadVec();
+                        newTargetLoc += report.GetRandLeadVec();
+                    }
                 }
 
                 // ----------------------------------- STEP 3: Recoil, Skewing, Skill checks, Cover calculations
 
                 rotationDegrees = 0f;
                 angleRadians = 0f;
-                if (numShotsFired < CompHyperburst.HyperburstShotCount - 1) {
+                if (numShotsFired < CompHyperburst.HyperburstShotCount) {
                     if (numShotsFired == 0) {
                         GetSwayVec(ref rotationDegrees, ref angleRadians);
+                    } else {
+                        GetHyperburstSwayVec(ref rotationDegrees, ref angleRadians);
                     }
-                    GetHyperburstRecoilVec(ref rotationDegrees, ref angleRadians);
+                    GetHyperburstRecoilVec(ref rotationDegrees, ref angleRadians, CompHyperburst.HyperburstRecoilFactor);
+                } else if (numShotsFired == CompHyperburst.HyperburstShotCount) {
+                    var enhancedRecoil = (1f - CompHyperburst.HyperburstRecoilFactor) * CompHyperburst.HyperburstShotCount;
+
+                    GetSwayVec(ref rotationDegrees, ref angleRadians);
+                    GetHyperburstRecoilVec(ref rotationDegrees, ref angleRadians, enhancedRecoil);
                 } else {
                     GetSwayVec(ref rotationDegrees, ref angleRadians);
                     GetRecoilVec(ref rotationDegrees, ref angleRadians);
@@ -89,6 +102,20 @@ namespace CombatExtendedVek.Verbs {
                 }
                 angleRadians += lastShotAngle;
             }
+
+            // ----------------------------------- STEP 4: Mechanical variation
+
+            // Get shotvariation, in angle Vector2 RADIANS.
+            Vector2 spreadVec = (projectilePropsCE.isInstant && projectilePropsCE.damageFalloff) ? new Vector2(0, 0) : report.GetRandSpreadVec();
+            // ----------------------------------- STEP 5: Finalization
+
+            if (!LockRotationAndAngle) {
+                lastShotRotation = ShotRotation(newTargetLoc.ToVector3());
+            }
+            shotRotation = (lastShotRotation + rotationDegrees + spreadVec.x) % 360;
+            shotAngle = angleRadians + spreadVec.y * Mathf.Deg2Rad;
+            distance = (newTargetLoc - sourceLoc).magnitude;
+            sourceLoc += IncrementBarrelCount();
         }
 
         /// <summary>
@@ -96,8 +123,8 @@ namespace CombatExtendedVek.Verbs {
         /// </summary>
         /// <param name="rotation">The ref float to have horizontal recoil in degrees added to.</param>
         /// <param name="angle">The ref float to have vertical recoil in radians added to.</param>
-        private void GetHyperburstRecoilVec(ref float rotation, ref float angle) {
-            var recoil = RecoilAmount * 0.1f;
+        private void GetHyperburstRecoilVec(ref float rotation, ref float angle, float recoilFactor) {
+            var recoil = RecoilAmount * recoilFactor;
             float maxX = recoil * 0.5f;
             float minX = -maxX;
             float maxY = recoil;
@@ -111,26 +138,37 @@ namespace CombatExtendedVek.Verbs {
             angle += recoilMagnitude * Mathf.Deg2Rad * trd;
             lastRecoilDeg += nextRecoilMagnitude * trd;
         }
+        /// <summary>
+        /// Calculates current weapon sway based on a parametric function with maximum amplitude depending on shootingAccuracy and scaled by weapon's swayFactor using the stazrt of the hyperburst.
+        /// </summary>
+        /// <param name="rotation">The ref float to have horizontal sway in degrees added to.</param>
+        /// <param name="angle">The ref float to have vertical sway in radians added to.</param>
+        private void GetHyperburstSwayVec(ref float rotation, ref float angle) {
+            float num = hyperburstStartTick + Shooter.thingIDNumber;
+            rotation += SwayAmplitude * Mathf.Sin(num * 0.022f);
+            angle += 0.004363323f * SwayAmplitude * Mathf.Sin(num * 0.0165f);
+        }
     }
     [HarmonyPatch(typeof(Verb), nameof(Verb.TryCastNextBurstShot))]
-    public static class Hyperburst_VerbPatch {
+    internal static class Verb_TryCastNextBurstShot_Hyperburst {
 
-        private static readonly MethodInfo method_GetActualTicksBetweenBurstShots = AccessTools.Method(typeof(Hyperburst_VerbPatch), "GetActualTicksBetweenBurstShots");
+        private static readonly MethodInfo method_GetActualTicksBetweenBurstShots = AccessTools.Method(typeof(Verb_TryCastNextBurstShot_Hyperburst), "GetActualTicksBetweenBurstShots");
         private static readonly FieldInfo field_ticksToNextBurstShot = AccessTools.Field(typeof(Verb), "ticksToNextBurstShot");
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
             
             var codes = new List<CodeInstruction>(instructions);
             var target = FindInsertionTarget(codes);
+            //codes[target -1] = new CodeInstruction(OpCodes.Nop);
             codes[target] = new CodeInstruction(OpCodes.Nop);
             codes.InsertRange(target, new CodeInstruction[] {
-                new CodeInstruction(OpCodes.Ldarg_0),
+                //new CodeInstruction(OpCodes.Ldarg_0),
                 new CodeInstruction(OpCodes.Call, method_GetActualTicksBetweenBurstShots),
             });
             return codes.AsEnumerable();
         }
         private static int FindInsertionTarget(List<CodeInstruction> codes) {
             for (int i = 0; i < codes.Count; i++) {
-                if (codes[i].opcode == OpCodes.Ldfld && codes[i].LoadsField(field_ticksToNextBurstShot)) {
+                if (codes[i].StoresField(field_ticksToNextBurstShot)) {
                     return i - 1;
                 }
             }
@@ -138,13 +176,57 @@ namespace CombatExtendedVek.Verbs {
         }
         private static int GetActualTicksBetweenBurstShots(Verb verb) {
             var verb_ShootCEV = verb as Verb_ShootCEV;
-            if (verb_ShootCEV == null || verb_ShootCEV.CompHyperburst == null) {
+            if (verb_ShootCEV == null 
+                || verb_ShootCEV.CompHyperburst == null 
+                || verb_ShootCEV.CompFireModes == null 
+                || (verb_ShootCEV.CompFireModes.CurrentFireMode == FireMode.AutoFire 
+                    && !verb_ShootCEV.CompHyperburst.ApplyDuringAuto)
+            ) {
                 return verb.verbProps.ticksBetweenBurstShots;
             }
-            if (verb_ShootCEV.numShotsFired < verb_ShootCEV.CompHyperburst.HyperburstShotCount - 1) {
+            if (verb_ShootCEV.numShotsFired < verb_ShootCEV.CompHyperburst.HyperburstShotCount) {
                 return verb_ShootCEV.CompHyperburst.TicksBetweenHyperburstShots;
             }
             return verb.verbProps.ticksBetweenBurstShots;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class Harmony_ThingDef {
+        private const string BurstShotFireRate = "BurstShotFireRate";
+
+        private static System.Type? type;
+        private static AccessTools.FieldRef<object, VerbProperties>? weaponField;
+        private static AccessTools.FieldRef<object, ThingDef>? thisField;
+        private static AccessTools.FieldRef<object, StatDrawEntry>? currentField;
+
+        static MethodBase TargetMethod() {
+            type = typeof(ThingDef).GetNestedTypes(AccessTools.all).FirstOrDefault(x => x.Name.Contains("<SpecialDisplayStats>"));
+            weaponField = AccessTools.FieldRefAccess<VerbProperties>(type, AccessTools.GetFieldNames(type).FirstOrDefault(x => x.Contains("<verb>")));
+            thisField = AccessTools.FieldRefAccess<ThingDef>(type, AccessTools.GetFieldNames(type).FirstOrDefault(x => x.Contains("this")));
+            currentField = AccessTools.FieldRefAccess<StatDrawEntry>(type, AccessTools.GetFieldNames(type).FirstOrDefault(x => x.Contains("current")));
+
+            return AccessTools.Method(type, "MoveNext");
+        }
+
+        public static void Postfix(IEnumerator<StatDrawEntry> __instance, ref bool __result) {
+            if (__result) {
+                var entry = __instance.Current;
+                if (entry.LabelCap.Contains(BurstShotFireRate.Translate().CapitalizeFirst())) {
+                    var def = thisField(__instance);
+                    var compProps = def.GetCompProperties<CompProperties_Hyperburst>();
+
+                    if (compProps != null) {
+                        var ticksBetweenHyperburstShots = compProps.ticksBetweenHyperburstShots;
+                        var ticksBetweenBurstShots = weaponField(__instance).ticksBetweenBurstShots;
+
+                        // Include hyperburst
+                        if (ticksBetweenHyperburstShots != ticksBetweenBurstShots) {
+                            entry.valueStringInt = string.Format("{0} / {1} rpm", 3600 / ticksBetweenHyperburstShots, 3600 / ticksBetweenBurstShots);
+                        }
+                    }
+                }
+            }
         }
     }
 }
