@@ -1,4 +1,5 @@
 ﻿using CombatExtended;
+using CombatExtended.AI;
 using CombatExtendedVek.Comps;
 using HarmonyLib;
 using RimWorld;
@@ -192,7 +193,7 @@ namespace CombatExtendedVek.Verbs {
     }
 
     [HarmonyPatch]
-    internal static class Harmony_ThingDef {
+    internal static class ThingDef_Description_Hyperburst {
         private const string BurstShotFireRate = "BurstShotFireRate";
 
         private static System.Type? type;
@@ -226,6 +227,21 @@ namespace CombatExtendedVek.Verbs {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(CompFireSelection), "OptimizeModes")]
+    static class CompFireSelection_OptimizeModes_Hyperburst {
+        static void Postfix(CompFireModes fireModes, Verb verb, LocalTargetInfo castTarg, LocalTargetInfo destTarg) {
+            var shootCEV = verb as Verb_ShootCEV;
+            if (shootCEV == null) { return; }
+            if (shootCEV.compHyperburst == null) { return; }
+            if (fireModes.CurrentFireMode == FireMode.SingleFire) {
+                fireModes.TrySetFireMode(FireMode.BurstFire);
+            }
+            if (fireModes.CurrentFireMode == FireMode.AutoFire && shootCEV.compHyperburst.ApplyDuringAuto == false) {
+                fireModes.TrySetFireMode(FireMode.BurstFire);
             }
         }
     }
