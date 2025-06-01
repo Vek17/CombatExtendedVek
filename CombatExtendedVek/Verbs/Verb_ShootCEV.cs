@@ -8,11 +8,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Text;
-using System.Threading.Tasks;
 using UnityEngine;
 using Verse;
-using Verse.Noise;
 
 namespace CombatExtendedVek.Verbs {
     public class Verb_ShootCEV : Verb_ShootCE {
@@ -125,7 +122,7 @@ namespace CombatExtendedVek.Verbs {
         /// <param name="rotation">The ref float to have horizontal recoil in degrees added to.</param>
         /// <param name="angle">The ref float to have vertical recoil in radians added to.</param>
         private void GetHyperburstRecoilVec(ref float rotation, ref float angle, float recoilFactor) {
-            var recoil = RecoilAmount * recoilFactor;
+            var recoil = RecoilAmount * (recoilFactor * Math.Max(1, numShotsFired));
             float maxX = recoil * 0.5f;
             float minX = -maxX;
             float maxY = recoil;
@@ -156,7 +153,7 @@ namespace CombatExtendedVek.Verbs {
         private static readonly MethodInfo method_GetActualTicksBetweenBurstShots = AccessTools.Method(typeof(Verb_TryCastNextBurstShot_Hyperburst), "GetActualTicksBetweenBurstShots");
         private static readonly FieldInfo field_ticksToNextBurstShot = AccessTools.Field(typeof(Verb), "ticksToNextBurstShot");
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
-            
+
             var codes = new List<CodeInstruction>(instructions);
             var target = FindInsertionTarget(codes);
             //codes[target -1] = new CodeInstruction(OpCodes.Nop);
@@ -177,10 +174,10 @@ namespace CombatExtendedVek.Verbs {
         }
         private static int GetActualTicksBetweenBurstShots(Verb verb) {
             var verb_ShootCEV = verb as Verb_ShootCEV;
-            if (verb_ShootCEV == null 
-                || verb_ShootCEV.CompHyperburst == null 
-                || verb_ShootCEV.CompFireModes == null 
-                || (verb_ShootCEV.CompFireModes.CurrentFireMode == FireMode.AutoFire 
+            if (verb_ShootCEV == null
+                || verb_ShootCEV.CompHyperburst == null
+                || verb_ShootCEV.CompFireModes == null
+                || (verb_ShootCEV.CompFireModes.CurrentFireMode == FireMode.AutoFire
                     && !verb_ShootCEV.CompHyperburst.ApplyDuringAuto)
             ) {
                 return verb.verbProps.ticksBetweenBurstShots;
@@ -231,7 +228,7 @@ namespace CombatExtendedVek.Verbs {
         }
     }
 
-    [HarmonyPatch(typeof(CompFireSelection), "OptimizeModes")]
+    [HarmonyPatch(typeof(CompFireSelection), nameof(CompFireSelection.OptimizeModes))]
     static class CompFireSelection_OptimizeModes_Hyperburst {
         static void Postfix(CompFireModes fireModes, Verb verb, LocalTargetInfo castTarg, LocalTargetInfo destTarg) {
             var shootCEV = verb as Verb_ShootCEV;
