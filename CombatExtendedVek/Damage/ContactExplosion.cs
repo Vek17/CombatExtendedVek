@@ -1,15 +1,10 @@
 ﻿using CombatExtended;
-using CombatExtended.AI;
-using CombatExtendedVek.Verbs;
 using HarmonyLib;
 using RimWorld;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using Verse;
-using static RimWorld.PsychicRitualRoleDef;
 
 namespace CombatExtendedVek.Damage {
     public class ContactExplosion : SecondaryDamage {
@@ -93,6 +88,7 @@ namespace CombatExtendedVek.Damage {
                         stringBuilder.AppendLine("   " + "CE_DescBluntPenetration".Translate() + ": " + (props.armorPenetrationBlunt * multiplier).ToStringByStyle(ToStringStyle.FloatTwo) + " " + "CE_MPa".Translate());
                     }
                 }
+                // Contact explosion
                 foreach (var contactExplosion in props.secondaryDamage.OfType<ContactExplosion>()) {
                     stringBuilder.AppendLine("   " + "CEV_DescContactExplosion".Translate() + ":");
                     stringBuilder.AppendLine("   " + "   " + "CE_DescDamage".Translate() + ": " + contactExplosion.amount + " (" + contactExplosion.def.LabelCap + ")");
@@ -116,6 +112,30 @@ namespace CombatExtendedVek.Damage {
                 if (props.spreadMult != 1) {
                     stringBuilder.AppendLine("   " + "CE_DescSpreadMult".Translate() + ": " + props.spreadMult.ToStringByStyle(ToStringStyle.PercentZero));
                 }
+                if (props.recoilMultiplier != 1) {
+                    stringBuilder.AppendLine("   " + "CE_DescRecoilMult".Translate() + ": " + props.recoilMultiplier.ToStringByStyle(ToStringStyle.PercentZero));
+                }
+                if (props.recoilOffset != 0) {
+                    stringBuilder.AppendLine("   " + "CE_DescRecoilOffset".Translate() + ": " + props.recoilOffset.ToStringByStyle(ToStringStyle.FloatMaxOne));
+                }
+                if (props.effectiveRangeMultiplier != 1) {
+                    stringBuilder.AppendLine("   " + "CE_DescEffectiveRangeMult".Translate() + ": " + props.effectiveRangeMultiplier.ToStringByStyle(ToStringStyle.PercentZero));
+                }
+                if (props.effectiveRangeOffset != 0) {
+                    stringBuilder.AppendLine("   " + "CE_DescEffectiveRangeOffset".Translate() + ": " + props.effectiveRangeOffset.ToStringByStyle(ToStringStyle.FloatMaxOne));
+                }
+                if (props.warmupMultiplier != 1) {
+                    stringBuilder.AppendLine("   " + "CE_DescWarmupMult".Translate() + ": " + props.warmupMultiplier.ToStringByStyle(ToStringStyle.PercentZero));
+                }
+                if (props.warmupOffset != 0) {
+                    stringBuilder.AppendLine("   " + "CE_DescWarmupOffset".Translate() + ": " + props.warmupOffset.ToStringByStyle(ToStringStyle.FloatMaxOne));
+                }
+                if (props.muzzleFlashMultiplier != 1) {
+                    stringBuilder.AppendLine("   " + "CE_DescMuzzleFlashMult".Translate() + ": " + props.muzzleFlashMultiplier.ToStringByStyle(ToStringStyle.PercentZero));
+                }
+                if (props.muzzleFlashOffset != 0) {
+                    stringBuilder.AppendLine("   " + "CE_DescMuzzleFlashOffset".Translate() + ": " + props.muzzleFlashOffset.ToStringByStyle(ToStringStyle.FloatMaxOne));
+                }
 
                 // Fragments
                 var fragmentComp = projectileDef.GetCompProperties<CompProperties_Fragments>();
@@ -123,7 +143,7 @@ namespace CombatExtendedVek.Damage {
                     stringBuilder.AppendLine("   " + "CE_DescFragments".Translate() + ":");
                     foreach (var fragmentDef in fragmentComp.fragments) {
                         var fragmentProps = fragmentDef?.thingDef?.projectile as ProjectilePropertiesCE;
-                        stringBuilder.AppendLine("   " + "   " + fragmentDef.LabelCap);
+                        stringBuilder.AppendLine("   " + "   " + fragmentDef?.LabelCap);
                         stringBuilder.AppendLine("   " + "   " + "   " + "CE_DescDamage".Translate() + ": " + fragmentProps?.damageAmountBase.ToString() + " (" + fragmentProps?.damageDef.LabelCap.ToString() + ")");
                         stringBuilder.AppendLine("   " + "   " + "   " + "CE_DescSharpPenetration".Translate() + ": " + fragmentProps?.armorPenetrationSharp.ToStringByStyle(ToStringStyle.FloatTwo) + " " + "CE_mmRHA".Translate());
                         stringBuilder.AppendLine("   " + "   " + "   " + "CE_DescBluntPenetration".Translate() + ": " + fragmentProps?.armorPenetrationBlunt.ToStringByStyle(ToStringStyle.FloatTwo) + " " + "CE_MPa".Translate());
@@ -134,5 +154,7 @@ namespace CombatExtendedVek.Damage {
                 return false;
             }
         }
+
+        
     }
 }

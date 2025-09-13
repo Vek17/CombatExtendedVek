@@ -5,7 +5,7 @@ using Verse;
 namespace CombatExtendedVek {
     [StaticConstructorOnStartup]
     public static class HarmonyInstance {
-        private static Harmony harmony = null;
+        private static Harmony harmony = new Harmony("CombatExtendedVek.HarmonyCEV");
 
         static internal Harmony instance {
             get {
